@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard Analisis Penjualan - KDKMP PARANG</title>
+  <meta name="description" content="Dashboard analisis penjualan dan stok opname KDKMP PARANG periode Juni-Oktober 2026" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">&#x1F3EA;</div>
+    <div class="brand-text">
+      <span class="brand-title">KDKMP</span>
+      <span class="brand-sub">PARANG</span>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="#" class="nav-item active" data-section="overview" id="nav-overview">
+      <span class="nav-icon">&#x1F4CA;</span><span>Ringkasan</span>
+    </a>
+    <a href="#" class="nav-item" data-section="products" id="nav-products">
+      <span class="nav-icon">&#x1F4E6;</span><span>Produk</span>
+    </a>
+    <a href="#" class="nav-item" data-section="producers" id="nav-producers">
+      <span class="nav-icon">&#x1F3ED;</span><span>Produsen</span>
+    </a>
+    <a href="#" class="nav-item" data-section="stock" id="nav-stock">
+      <span class="nav-icon">&#x1F4CB;</span><span>Stok Opname</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-import-wrap">
+    <button class="btn-sidebar-import" id="btn-open-import" title="Import link spreadsheet atau upload file excel baru">
+      <span class="import-icon">&#x1F4E5;</span>
+      <div class="import-text-block">
+        <span class="import-label">Import / Update Data</span>
+        <span class="import-subtext" id="sidebar-import-sub">Google Sheets &amp; Excel</span>
+      </div>
+    </button>
+  </div>
+
+  <div class="sidebar-footer"><span id="sidebar-footer-text">Data: Jun-Okt 2026</span></div>
+</aside>
+
+<main class="main-content" id="main-content">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="hamburger" id="hamburger">&#9776;</button>
+      <div class="topbar-title" id="page-title">Ringkasan Penjualan</div>
+      <div class="data-status-pill" id="data-status-pill" title="Status data aktif">
+        <span class="pill-dot"></span>
+        <span id="pill-text">118 Hari Data</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-topbar-import" id="btn-open-import-header">
+        <span class="btn-icon">&#x1F4E5;</span>
+        <span>Import Data</span>
+      </button>
+      <div class="filter-group" id="filter-group">
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-period="all" id="tab-all">Semua</button>
+          <button class="filter-tab" data-period="month" id="tab-month">Bulan</button>
+          <button class="filter-tab" data-period="week" id="tab-week">Minggu</button>
+          <button class="filter-tab" data-period="day" id="tab-day">Hari</button>
+        </div>
+        <div class="filter-selector" id="filter-selector" style="display:none">
+          <select id="period-select" class="period-select"></select>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="loading-overlay" id="loading">
+    <div class="spinner"></div>
+    <p>Memuat data...</p>
+  </div>
+
+  <!-- OVERVIEW -->
+  <section class="section active" id="section-overview">
+    <div class="kpi-grid" id="kpi-grid">
+      <div class="kpi-card kpi-revenue">
+        <div class="kpi-icon">&#x1F4B0;</div>
+        <div class="kpi-body">
+          <div class="kpi-label">Total Pendapatan</div>
+          <div class="kpi-value" id="kpi-revenue">Rp 0</div>
+          <div class="kpi-sub" id="kpi-revenue-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-qty">
+        <div class="kpi-icon">&#x1F4E6;</div>
+        <div class="kpi-body">
+          <div class="kpi-label">Total Terjual</div>
+          <div class="kpi-value" id="kpi-qty">0 pcs</div>
+          <div class="kpi-sub" id="kpi-qty-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-products">
+        <div class="kpi-icon">&#x1F3F7;</div>
+        <div class="kpi-body">
+          <div class="kpi-label">Produk Aktif</div>
+          <div class="kpi-value" id="kpi-products">0</div>
+          <div class="kpi-sub" id="kpi-products-sub"></div>
+        </div>
+      </div>
+      <div class="kpi-card kpi-daily">
+        <div class="kpi-icon">&#x1F4C8;</div>
+        <div class="kpi-body">
+          <div class="kpi-label">Rata-rata/Hari</div>
+          <div class="kpi-value" id="kpi-daily">Rp 0</div>
+          <div class="kpi-sub" id="kpi-daily-sub"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card chart-large">
+        <div class="chart-header">
+          <h3>Tren Pendapatan Harian</h3>
+          <div class="chart-badge" id="trend-badge">-</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-trend"></canvas></div>
+      </div>
+      <div class="chart-card chart-small">
+        <div class="chart-header"><h3>Top 5 Produk</h3></div>
+        <div class="chart-wrap"><canvas id="chart-top5"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card chart-medium">
+        <div class="chart-header"><h3>Pendapatan per Produsen</h3></div>
+        <div class="chart-wrap"><canvas id="chart-producer"></canvas></div>
+      </div>
+      <div class="chart-card chart-medium">
+        <div class="chart-header"><h3>Penjualan Harian (Qty)</h3></div>
+        <div class="chart-wrap"><canvas id="chart-qty"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRODUCTS -->
+  <section class="section" id="section-products">
+    <div class="table-card">
+      <div class="table-header">
+        <h3>Daftar Produk &amp; Penjualan</h3>
+        <div class="table-controls">
+          <input type="text" id="product-search" placeholder="Cari produk..." class="search-input" />
+          <select id="producer-filter" class="filter-select">
+            <option value="">Semua Produsen</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="product-table">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th class="sortable" data-col="name">Nama Produk &#x2195;</th>
+              <th class="sortable" data-col="producer">Produsen &#x2195;</th>
+              <th class="sortable" data-col="price">Harga &#x2195;</th>
+              <th class="sortable" data-col="qty">Qty Terjual &#x2195;</th>
+              <th class="sortable" data-col="revenue">Pendapatan &#x2195;</th>
+              <th>Stok Terakhir</th>
+            </tr>
+          </thead>
+          <tbody id="product-tbody"></tbody>
+        </table>
+      </div>
+      <div class="table-footer"><span id="product-count">0 produk</span></div>
+    </div>
+  </section>
+
+  <!-- PRODUCERS -->
+  <section class="section" id="section-producers">
+    <div class="charts-row">
+      <div class="chart-card" style="flex:1">
+        <div class="chart-header"><h3>Pendapatan per Produsen</h3></div>
+        <div class="chart-wrap" style="height:320px"><canvas id="chart-producer2"></canvas></div>
+      </div>
+      <div class="chart-card" style="flex:1">
+        <div class="chart-header"><h3>Volume Penjualan per Produsen</h3></div>
+        <div class="chart-wrap" style="height:320px"><canvas id="chart-producer-qty"></canvas></div>
+      </div>
+    </div>
+    <div class="table-card" style="margin-top:20px">
+      <div class="table-header"><h3>Detail per Produsen</h3></div>
+      <div class="table-wrap">
+        <table id="producer-table">
+          <thead>
+            <tr>
+              <th>Produsen</th>
+              <th>Produk Terjual</th>
+              <th>Qty Total</th>
+              <th>Pendapatan</th>
+              <th>% Kontribusi</th>
+            </tr>
+          </thead>
+          <tbody id="producer-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- STOCK -->
+  <section class="section" id="section-stock">
+    <div class="filter-bar">
+      <label>Pilih Tanggal:
+        <select id="stock-date-select" class="period-select"></select>
+      </label>
+    </div>
+    <div class="kpi-grid" id="stock-kpis" style="margin-top:16px"></div>
+    <div class="table-card" style="margin-top:20px">
+      <div class="table-header">
+        <h3 id="stock-table-title">Stok Opname</h3>
+        <input type="text" id="stock-search" placeholder="Cari produk..." class="search-input" />
+      </div>
+      <div class="table-wrap">
+        <table id="stock-table">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Nama Produk</th>
+              <th>Produsen</th>
+              <th>Stok Total</th>
+              <th>Harga</th>
+              <th>Nilai Stok</th>
+              <th>Terjual (vs kemarin)</th>
+            </tr>
+          </thead>
+          <tbody id="stock-tbody"></tbody>
+        </table>
+      </div>
+      <div class="table-footer">
+        <span id="stock-count">0 produk</span>
+        <span id="stock-total-value" style="font-weight:600;color:var(--accent)"></span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- MODAL IMPORT DATA -->
+<div class="modal-backdrop" id="import-modal" style="display:none;">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <div class="modal-icon">&#x1F4CA;</div>
+        <div>
+          <h2>Import &amp; Analisis Data Baru</h2>
+          <p class="modal-subtitle">Perbarui data penjualan dari Google Spreadsheet atau File Excel (.xlsx)</p>
+        </div>
+      </div>
+      <button class="modal-close-btn" id="btn-close-modal">&times;</button>
+    </div>
+
+    <!-- Modal Tabs -->
+    <div class="modal-tabs">
+      <button class="modal-tab active" data-tab="tab-link" id="tab-btn-link">
+        <span class="tab-icon">&#x1F517;</span> Link Google Sheets
+      </button>
+      <button class="modal-tab" data-tab="tab-file" id="tab-btn-file">
+        <span class="tab-icon">&#x1F4C1;</span> Upload File Excel (.xlsx)
+      </button>
+      <button class="modal-tab" data-tab="tab-status" id="tab-btn-status">
+        <span class="tab-icon">&#x2699;</span> Status &amp; Reset
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <!-- TAB 1: GOOGLE SHEETS LINK -->
+      <div class="modal-tab-content active" id="pane-tab-link">
+        <div class="modal-alert info">
+          <span class="alert-icon">&#x2139;&#xFE0F;</span>
+          <div>
+            <strong>Panduan Google Sheets:</strong><br />
+            Buka Spreadsheet &gt; klik tombol <b>Bagikan (Share)</b> &gt; ubah Akses Umum menjadi <b>"Siapa saja yang memiliki link dapat melihat" (Viewer)</b> &gt; Salin link dan tempel di bawah.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="input-link-stock">
+            Link Google Sheets: <strong>Stok Opname</strong>
+            <span class="badge-tag">Wajib (Multi-Sheet)</span>
+          </label>
+          <div class="input-with-action">
+            <input type="text" id="input-link-stock" class="modal-input" placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs.../edit?usp=sharing" />
+            <button class="btn-input-action" id="btn-open-stock-link" title="Buka Spreadsheet di Tab Baru">&#x2197;&#xFE0F;</button>
+          </div>
+          <div class="input-help">File multi-sheet harian seperti: <code>16-6-2026</code>, <code>17-6-2026</code>, dst.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="input-link-price">
+            Link Google Sheets: <strong>Daftar Harga Barang</strong>
+            <span class="badge-tag">Wajib (Single Sheet)</span>
+          </label>
+          <div class="input-with-action">
+            <input type="text" id="input-link-price" class="modal-input" placeholder="https://docs.google.com/spreadsheets/d/1v8K.../edit?usp=sharing" />
+            <button class="btn-input-action" id="btn-open-price-link" title="Buka Spreadsheet di Tab Baru">&#x2197;&#xFE0F;</button>
+          </div>
+          <div class="input-help">Sheet berisi kolom: <code>PRODUSEN</code>, <code>Nama Produk</code>, <code>Harga</code>.</div>
+        </div>
+
+        <div class="import-actions">
+          <button class="btn-primary-action" id="btn-fetch-sheets">
+            <span class="btn-icon">&#x1F680;</span>
+            <span>Tarik Data Spreadsheet &amp; Mulai Analisis</span>
+          </button>
+        </div>
+
+        <div id="link-export-help" class="modal-alert warning" style="display:none; margin-top:14px;">
+          <span class="alert-icon">&#x26A0;&#xFE0F;</span>
+          <div>
+            <strong>Catatan Keamanan Browser (CORS):</strong><br />
+            Google membatasi unduhan langsung file multi-sheet dari script web. Anda dapat mengunduh langsung filenya:
+            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+              <a href="#" id="link-download-direct-stock" target="_blank" class="btn-link-action">&#x2B07;&#xFE0F; Unduh XLSX Stok Opname</a>
+              <a href="#" id="link-download-direct-price" target="_blank" class="btn-link-action">&#x2B07;&#xFE0F; Unduh XLSX Daftar Harga</a>
+            </div>
+            <span style="font-size:11px; color:var(--text-muted); display:block; margin-top:6px;">Setelah terunduh, beralih ke tab <b>Upload File Excel</b> di samping untuk proses instan offline!</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: EXCEL FILE UPLOAD -->
+      <div class="modal-tab-content" id="pane-tab-file">
+        <div class="modal-alert tip">
+          <span class="alert-icon">&#x26A1;</span>
+          <div>
+            <strong>Pemrosesan Cepat &amp; Aman:</strong> File diolah 100% langsung di browser pengguna tanpa diunggah ke server lain. Hanya butuh ~2 detik untuk 118 sheet!
+          </div>
+        </div>
+
+        <div class="dropzone-grid">
+          <div class="dropzone" id="dropzone-stock">
+            <input type="file" id="file-stock" accept=".xlsx,.xls" style="display:none;" />
+            <div class="dropzone-icon">&#x1F4CB;</div>
+            <div class="dropzone-title">File Stok Opname (.xlsx)</div>
+            <div class="dropzone-sub">Drag &amp; drop atau <span class="dropzone-browse">Pilih File</span></div>
+            <div class="dropzone-status" id="status-file-stock">Belum ada file dipilih</div>
+          </div>
+
+          <div class="dropzone" id="dropzone-price">
+            <input type="file" id="file-price" accept=".xlsx,.xls,.csv" style="display:none;" />
+            <div class="dropzone-icon">&#x1F3F7;</div>
+            <div class="dropzone-title">File Daftar Harga (.xlsx / .csv)</div>
+            <div class="dropzone-sub">Drag &amp; drop atau <span class="dropzone-browse">Pilih File</span></div>
+            <div class="dropzone-status" id="status-file-price">Belum ada file dipilih</div>
+          </div>
+        </div>
+
+        <div class="import-actions" style="margin-top:16px;">
+          <button class="btn-primary-action" id="btn-process-files" disabled>
+            <span class="btn-icon">&#x26A1;</span>
+            <span>Mulai Analisis File Excel</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB 3: STATUS & RESET -->
+      <div class="modal-tab-content" id="pane-tab-status">
+        <div class="status-summary-card">
+          <div class="status-row">
+            <span class="status-label">Sumber Data Aktif:</span>
+            <span class="status-val" id="info-data-source">Default (data.json)</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Rentang Periode:</span>
+            <span class="status-val" id="info-data-range">-</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Total Hari Stok:</span>
+            <span class="status-val" id="info-stock-days">0 hari</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Total Hari Penjualan:</span>
+            <span class="status-val" id="info-sales-days">0 hari</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Waktu Impor:</span>
+            <span class="status-val" id="info-last-imported">-</span>
+          </div>
+        </div>
+
+        <div class="reset-action-box" style="margin-top:20px;">
+          <p>Ingin mengembalikan dashboard ke data bawaan toko?</p>
+          <button class="btn-danger-action" id="btn-reset-data">
+            <span>&#x1F504;</span>
+            <span>Reset ke Data Bawaan (data.json)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- PROCESSING PROGRESS BOX -->
+      <div class="progress-box" id="import-progress-box" style="display:none;">
+        <div class="progress-head">
+          <span id="progress-title">Sedang memproses data...</span>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar-fill" id="progress-fill" style="width:0%;"></div>
+        </div>
+        <div class="progress-log" id="progress-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST NOTIFICATION -->
+<div class="toast" id="toast" style="display:none;">
+  <span class="toast-icon" id="toast-icon">&#x2705;</span>
+  <span class="toast-text" id="toast-text">Data berhasil diperbarui!</span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
