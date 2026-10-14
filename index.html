@@ -2,9 +2,12 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Dashboard Analisis Penjualan - KDKMP PARANG</title>
-  <meta name="description" content="Dashboard analisis penjualan dan stok opname KDKMP PARANG periode Juni-Oktober 2026" />
+  <meta name="description" content="Dashboard analisis penjualan dan stok opname KDKMP PARANG" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -14,6 +17,8 @@
 </head>
 <body>
 
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-brand">
     <div class="brand-icon">&#x1F3EA;</div>
@@ -21,6 +26,7 @@
       <span class="brand-title">KDKMP</span>
       <span class="brand-sub">PARANG</span>
     </div>
+    <button class="sidebar-close-btn" id="sidebar-close-btn" title="Tutup Menu">&times;</button>
   </div>
   <nav class="sidebar-nav">
     <a href="#" class="nav-item active" data-section="overview" id="nav-overview">
@@ -47,52 +53,95 @@
     </button>
   </div>
 
-  <div class="sidebar-footer"><span id="sidebar-footer-text">Data: Jun-Okt 2026</span></div>
+  <div class="sidebar-footer"><span id="sidebar-footer-text">KDKMP PARANG</span></div>
 </aside>
 
 <main class="main-content" id="main-content">
   <header class="topbar">
-    <div class="topbar-left">
-      <button class="hamburger" id="hamburger">&#9776;</button>
-      <div class="topbar-title" id="page-title">Ringkasan Penjualan</div>
-      <div class="data-status-pill" id="data-status-pill" title="Status data aktif">
-        <span class="pill-dot"></span>
-        <span id="pill-text">118 Hari Data</span>
+    <div class="topbar-row-main">
+      <div class="topbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Menu">&#9776;</button>
+        <div class="topbar-title-wrap">
+          <div class="topbar-title" id="page-title">Ringkasan Penjualan</div>
+          <div class="data-status-pill empty" id="data-status-pill" title="Status data aktif">
+            <span class="pill-dot"></span>
+            <span id="pill-text">Belum Ada Data</span>
+          </div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-topbar-import" id="btn-open-import-header" title="Import Spreadsheet Baru">
+          <span class="btn-icon">&#x1F4E5;</span>
+          <span class="btn-text">Import Data</span>
+        </button>
       </div>
     </div>
-    <div class="topbar-right">
-      <button class="btn-topbar-import" id="btn-open-import-header">
-        <span class="btn-icon">&#x1F4E5;</span>
-        <span>Import Data</span>
-      </button>
-      <div class="filter-group" id="filter-group">
-        <div class="filter-tabs">
-          <button class="filter-tab active" data-period="all" id="tab-all">Semua</button>
-          <button class="filter-tab" data-period="month" id="tab-month">Bulan</button>
-          <button class="filter-tab" data-period="week" id="tab-week">Minggu</button>
-          <button class="filter-tab" data-period="day" id="tab-day">Hari</button>
-        </div>
-        <div class="filter-selector" id="filter-selector" style="display:none">
-          <select id="period-select" class="period-select"></select>
-        </div>
+    
+    <div class="topbar-row-filter" id="filter-group">
+      <div class="filter-tabs">
+        <button class="filter-tab active" data-period="all" id="tab-all">Semua</button>
+        <button class="filter-tab" data-period="month" id="tab-month">Bulan</button>
+        <button class="filter-tab" data-period="week" id="tab-week">Minggu</button>
+        <button class="filter-tab" data-period="day" id="tab-day">Hari</button>
+      </div>
+      <div class="filter-selector" id="filter-selector" style="display:none">
+        <select id="period-select" class="period-select" aria-label="Pilih Periode"></select>
       </div>
     </div>
   </header>
 
   <div class="loading-overlay" id="loading">
     <div class="spinner"></div>
-    <p>Memuat data...</p>
+    <p>Memuat sistem...</p>
   </div>
 
   <!-- OVERVIEW -->
   <section class="section active" id="section-overview">
+    <!-- Empty State Onboarding Hero Banner -->
+    <div class="empty-state-banner" id="empty-state-banner" style="display:none;">
+      <div class="empty-state-card">
+        <div class="empty-badge">🚀 Mulai Analisis</div>
+        <div class="empty-icon-wrap">
+          <div class="empty-main-icon">&#x1F4CA;</div>
+        </div>
+        <h2 class="empty-title">Data Penjualan Masih Kosong</h2>
+        <p class="empty-desc">
+          Dashboard KDKMP PARANG siap digunakan. Silakan masukkan <strong>Link Google Spreadsheet</strong> atau unggah <strong>File Excel (.xlsx)</strong> untuk memproses stok opname dan grafik analisis secara instan.
+        </p>
+        <div class="empty-cta-buttons">
+          <button class="btn-primary-action" id="btn-empty-import">
+            <span class="btn-icon">&#x1F4E5;</span>
+            <span>Import Spreadsheet Sekarang</span>
+          </button>
+          <button class="btn-secondary-action" id="btn-load-demo">
+            <span class="btn-icon">&#x1F4C2;</span>
+            <span>Muat Data Contoh (Demo)</span>
+          </button>
+        </div>
+        <div class="empty-steps">
+          <div class="empty-step">
+            <span class="step-num">1</span>
+            <span class="step-text">Siapkan link atau file XLSX Stok &amp; Harga</span>
+          </div>
+          <div class="empty-step">
+            <span class="step-num">2</span>
+            <span class="step-text">Klik tombol Import Data</span>
+          </div>
+          <div class="empty-step">
+            <span class="step-num">3</span>
+            <span class="step-text">Semua grafik &amp; laporan otomatis dianalisis</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="kpi-grid" id="kpi-grid">
       <div class="kpi-card kpi-revenue">
         <div class="kpi-icon">&#x1F4B0;</div>
         <div class="kpi-body">
           <div class="kpi-label">Total Pendapatan</div>
           <div class="kpi-value" id="kpi-revenue">Rp 0</div>
-          <div class="kpi-sub" id="kpi-revenue-sub"></div>
+          <div class="kpi-sub" id="kpi-revenue-sub">0 hari data</div>
         </div>
       </div>
       <div class="kpi-card kpi-qty">
@@ -100,7 +149,7 @@
         <div class="kpi-body">
           <div class="kpi-label">Total Terjual</div>
           <div class="kpi-value" id="kpi-qty">0 pcs</div>
-          <div class="kpi-sub" id="kpi-qty-sub"></div>
+          <div class="kpi-sub" id="kpi-qty-sub">0 pcs/hari</div>
         </div>
       </div>
       <div class="kpi-card kpi-products">
@@ -108,7 +157,7 @@
         <div class="kpi-body">
           <div class="kpi-label">Produk Aktif</div>
           <div class="kpi-value" id="kpi-products">0</div>
-          <div class="kpi-sub" id="kpi-products-sub"></div>
+          <div class="kpi-sub" id="kpi-products-sub">0 produk terdaftar</div>
         </div>
       </div>
       <div class="kpi-card kpi-daily">
@@ -116,7 +165,7 @@
         <div class="kpi-body">
           <div class="kpi-label">Rata-rata/Hari</div>
           <div class="kpi-value" id="kpi-daily">Rp 0</div>
-          <div class="kpi-sub" id="kpi-daily-sub"></div>
+          <div class="kpi-sub" id="kpi-daily-sub">rata-rata pendapatan harian</div>
         </div>
       </div>
     </div>
@@ -153,12 +202,13 @@
       <div class="table-header">
         <h3>Daftar Produk &amp; Penjualan</h3>
         <div class="table-controls">
-          <input type="text" id="product-search" placeholder="Cari produk..." class="search-input" />
+          <input type="text" id="product-search" placeholder="Cari nama produk..." class="search-input" />
           <select id="producer-filter" class="filter-select">
             <option value="">Semua Produsen</option>
           </select>
         </div>
       </div>
+      <div class="mobile-swipe-hint"><span>&#x1F446; Geser tabel ke samping untuk melihat detail</span></div>
       <div class="table-wrap">
         <table id="product-table">
           <thead>
@@ -184,15 +234,16 @@
     <div class="charts-row">
       <div class="chart-card" style="flex:1">
         <div class="chart-header"><h3>Pendapatan per Produsen</h3></div>
-        <div class="chart-wrap" style="height:320px"><canvas id="chart-producer2"></canvas></div>
+        <div class="chart-wrap" style="height:300px"><canvas id="chart-producer2"></canvas></div>
       </div>
       <div class="chart-card" style="flex:1">
         <div class="chart-header"><h3>Volume Penjualan per Produsen</h3></div>
-        <div class="chart-wrap" style="height:320px"><canvas id="chart-producer-qty"></canvas></div>
+        <div class="chart-wrap" style="height:300px"><canvas id="chart-producer-qty"></canvas></div>
       </div>
     </div>
     <div class="table-card" style="margin-top:20px">
       <div class="table-header"><h3>Detail per Produsen</h3></div>
+      <div class="mobile-swipe-hint"><span>&#x1F446; Geser tabel ke samping untuk melihat detail</span></div>
       <div class="table-wrap">
         <table id="producer-table">
           <thead>
@@ -221,8 +272,9 @@
     <div class="table-card" style="margin-top:20px">
       <div class="table-header">
         <h3 id="stock-table-title">Stok Opname</h3>
-        <input type="text" id="stock-search" placeholder="Cari produk..." class="search-input" />
+        <input type="text" id="stock-search" placeholder="Cari nama produk..." class="search-input" />
       </div>
+      <div class="mobile-swipe-hint"><span>&#x1F446; Geser tabel ke samping untuk melihat detail</span></div>
       <div class="table-wrap">
         <table id="stock-table">
           <thead>
@@ -248,9 +300,34 @@
 
 </main>
 
+<!-- MOBILE BOTTOM NAVIGATION -->
+<nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+  <button class="mob-nav-item active" data-section="overview" id="mob-nav-overview">
+    <span class="mob-nav-icon">&#x1F4CA;</span>
+    <span class="mob-nav-label">Ringkasan</span>
+  </button>
+  <button class="mob-nav-item" data-section="products" id="mob-nav-products">
+    <span class="mob-nav-icon">&#x1F4E6;</span>
+    <span class="mob-nav-label">Produk</span>
+  </button>
+  <button class="mob-nav-item" data-section="producers" id="mob-nav-producers">
+    <span class="mob-nav-icon">&#x1F3ED;</span>
+    <span class="mob-nav-label">Produsen</span>
+  </button>
+  <button class="mob-nav-item" data-section="stock" id="mob-nav-stock">
+    <span class="mob-nav-icon">&#x1F4CB;</span>
+    <span class="mob-nav-label">Stok</span>
+  </button>
+  <button class="mob-nav-item mob-nav-highlight" id="mob-nav-import">
+    <span class="mob-nav-icon">&#x1F4E5;</span>
+    <span class="mob-nav-label">Import</span>
+  </button>
+</nav>
+
 <!-- MODAL IMPORT DATA -->
 <div class="modal-backdrop" id="import-modal" style="display:none;">
   <div class="modal-box">
+    <div class="modal-drag-handle"></div>
     <div class="modal-header">
       <div class="modal-title-group">
         <div class="modal-icon">&#x1F4CA;</div>
@@ -392,11 +469,17 @@
         </div>
 
         <div class="reset-action-box" style="margin-top:20px;">
-          <p>Ingin mengembalikan dashboard ke data bawaan toko?</p>
-          <button class="btn-danger-action" id="btn-reset-data">
-            <span>&#x1F504;</span>
-            <span>Reset ke Data Bawaan (data.json)</span>
-          </button>
+          <p>Kelola data penyimpanan browser:</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+            <button class="btn-danger-action" id="btn-reset-data">
+              <span>&#x1F5D1;&#xFE0F;</span>
+              <span>Kosongkan Semua Data</span>
+            </button>
+            <button class="btn-secondary-action" id="btn-load-demo-modal">
+              <span>&#x1F4C2;</span>
+              <span>Muat Data Contoh / Demo</span>
+            </button>
+          </div>
         </div>
       </div>
 

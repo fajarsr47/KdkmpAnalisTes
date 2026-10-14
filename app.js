@@ -52,9 +52,33 @@ function getWeekStart(dateStr) {
   return mon.toISOString().slice(0, 10);
 }
 
+function getEmptyDB() {
+  return {
+    meta: {
+      source: 'empty',
+      imported_at: 'Belum Ada Data',
+      stock_days_count: 0,
+      sales_days_count: 0,
+      date_range: 'Belum Ada Data'
+    },
+    sales_by_day: {},
+    stock_by_day: {},
+    producers: {},
+    price_map: {},
+    producer_map: {},
+    all_products: []
+  };
+}
+
+function hasData() {
+  return Boolean(DB && DB.sales_by_day && Object.keys(DB.sales_by_day).length > 0);
+}
+
 // ─── Period Filtering ───────────────────────
 function getFilteredDates() {
+  if (!DB || !DB.sales_by_day) return [];
   const allDates = Object.keys(DB.sales_by_day).sort();
+  if (allDates.length === 0) return [];
   if (currentPeriod === 'all') return allDates;
 
   if (currentPeriod === 'month') {
@@ -73,6 +97,7 @@ function getFilteredDates() {
 function aggregateSales(dates) {
   // Returns: { product -> { qty, revenue, price, producer } }
   const agg = {};
+  if (!DB || !DB.sales_by_day) return agg;
   for (const date of dates) {
     const day = DB.sales_by_day[date] || {};
     for (const [prod, info] of Object.entries(day)) {
@@ -95,9 +120,19 @@ function totalQty(agg) {
 
 // ─── Populate Period Selectors ───────────────
 function buildPeriodOptions() {
-  const allDates = Object.keys(DB.sales_by_day).sort();
+  const allDates = DB && DB.sales_by_day ? Object.keys(DB.sales_by_day).sort() : [];
   const sel = document.getElementById('period-select');
+  if (!sel) return;
   sel.innerHTML = '';
+
+  if (allDates.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '(Belum ada data)';
+    sel.appendChild(opt);
+    currentPeriodValue = '';
+    return;
+  }
 
   if (currentPeriod === 'month') {
     const months = [...new Set(allDates.map(d => d.slice(0, 7)))].sort();
@@ -143,9 +178,17 @@ function buildPeriodOptions() {
 }
 
 function buildStockDateOptions() {
-  const allDates = Object.keys(DB.stock_by_day).sort().reverse();
+  const allDates = DB && DB.stock_by_day ? Object.keys(DB.stock_by_day).sort().reverse() : [];
   const sel = document.getElementById('stock-date-select');
+  if (!sel) return '';
   sel.innerHTML = '';
+  if (allDates.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '(Belum ada data stok)';
+    sel.appendChild(opt);
+    return '';
+  }
   allDates.forEach(d => {
     const opt = document.createElement('option');
     opt.value = d;
@@ -158,6 +201,33 @@ function buildStockDateOptions() {
 
 // ─── Overview Section ───────────────────────
 function renderOverview() {
+  const emptyBanner = document.getElementById('empty-state-banner');
+
+  if (!hasData()) {
+    if (emptyBanner) emptyBanner.style.display = 'block';
+    document.getElementById('kpi-revenue').textContent = 'Rp 0';
+    document.getElementById('kpi-revenue-sub').textContent = '0 hari data';
+    document.getElementById('kpi-qty').textContent = '0 pcs';
+    document.getElementById('kpi-qty-sub').textContent = '0 pcs/hari';
+    document.getElementById('kpi-products').textContent = '0';
+    document.getElementById('kpi-products-sub').textContent = '0 produk terdaftar';
+    document.getElementById('kpi-daily').textContent = 'Rp 0';
+    document.getElementById('kpi-daily-sub').textContent = 'rata-rata pendapatan harian';
+    const tb = document.getElementById('trend-badge');
+    if (tb) tb.textContent = '-';
+
+    // Clear charts
+    Object.keys(charts).forEach(k => {
+      if (charts[k]) {
+        charts[k].destroy();
+        delete charts[k];
+      }
+    });
+    return;
+  }
+
+  if (emptyBanner) emptyBanner.style.display = 'none';
+
   const dates = getFilteredDates();
   const agg = aggregateSales(dates);
   const rev = totalRevenue(agg);
@@ -165,6 +235,7 @@ function renderOverview() {
   const activeProd = Object.keys(agg).length;
   const days = dates.length;
   const avgDay = days > 0 ? rev / days : 0;
+  const totalRegistered = DB && DB.price_map ? Object.keys(DB.price_map).length : activeProd;
 
   // KPI
   document.getElementById('kpi-revenue').textContent = fmt(rev);
@@ -172,7 +243,7 @@ function renderOverview() {
   document.getElementById('kpi-qty').textContent = fmtQty(qty);
   document.getElementById('kpi-qty-sub').textContent = `${Math.round(qty / (days || 1)).toLocaleString('id-ID')} pcs/hari`;
   document.getElementById('kpi-products').textContent = activeProd;
-  document.getElementById('kpi-products-sub').textContent = `dari ${Object.keys(DB.price_map).length} produk terdaftar`;
+  document.getElementById('kpi-products-sub').textContent = `dari ${totalRegistered} produk terdaftar`;
   document.getElementById('kpi-daily').textContent = fmt(avgDay);
   document.getElementById('kpi-daily-sub').textContent = 'rata-rata pendapatan harian';
 
@@ -427,9 +498,9 @@ function renderProducts() {
   const agg = aggregateSales(dates);
 
   // Get last date for current stock
-  const allDates = Object.keys(DB.stock_by_day).sort();
-  const lastDate = allDates[allDates.length - 1];
-  const lastStock = DB.stock_by_day[lastDate] || {};
+  const allDates = DB && DB.stock_by_day ? Object.keys(DB.stock_by_day).sort() : [];
+  const lastDate = allDates.length > 0 ? allDates[allDates.length - 1] : null;
+  const lastStock = (lastDate && DB.stock_by_day) ? (DB.stock_by_day[lastDate] || {}) : {};
 
   // Build rows
   let rows = Object.entries(agg).map(([name, v]) => ({
@@ -440,9 +511,6 @@ function renderProducts() {
     revenue: v.revenue,
     lastStock: lastStock[name] || 0,
   }));
-
-  // Add products with zero sales but in price map
-  // (skip for now to keep it focused on sold items)
 
   // Sort
   const col = productSort.col;
@@ -480,7 +548,7 @@ function renderProducts() {
   const maxRev = Math.max(...rows.map(r => r.revenue), 1);
 
   tbody.innerHTML = rows.length === 0
-    ? '<tr><td colspan="7" class="no-data">Tidak ada data untuk filter yang dipilih</td></tr>'
+    ? (!hasData() ? '<tr><td colspan="7" class="no-data">&#x1F4E6; Belum ada data produk. Silakan impor spreadsheet Anda.</td></tr>' : '<tr><td colspan="7" class="no-data">Tidak ada data untuk filter yang dipilih</td></tr>')
     : rows.map((r, i) => `
     <tr>
       <td class="text-muted">${i + 1}</td>
@@ -526,59 +594,87 @@ function renderProducers() {
   const palette = ['#58a6ff','#3fb950','#bc8cff','#ffa657','#d29922','#f85149','#79c0ff','#56d364'];
 
   if (charts['chart-producer-qty']) charts['chart-producer-qty'].destroy();
-  charts['chart-producer-qty'] = new Chart(document.getElementById('chart-producer-qty').getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Qty Terjual',
-        data: qtyData,
-        backgroundColor: palette.map(c => c + 'bb'),
-        borderColor: palette,
-        borderWidth: 1,
-        borderRadius: 6,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      indexAxis: 'y',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#1c2331', borderColor: '#30363d', borderWidth: 1,
-          callbacks: { label: ctx => ' ' + ctx.raw.toLocaleString('id-ID') + ' pcs' }
-        }
+  if (sorted.length > 0) {
+    charts['chart-producer-qty'] = new Chart(document.getElementById('chart-producer-qty').getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Qty Terjual',
+          data: qtyData,
+          backgroundColor: palette.map(c => c + 'bb'),
+          borderColor: palette,
+          borderWidth: 1,
+          borderRadius: 6,
+        }]
       },
-      scales: {
-        x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#7d8590', font: { size: 11 } } },
-        y: { grid: { display: false }, ticks: { color: '#7d8590', font: { size: 11 } } }
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1c2331', borderColor: '#30363d', borderWidth: 1,
+            callbacks: { label: ctx => ' ' + ctx.raw.toLocaleString('id-ID') + ' pcs' }
+          }
+        },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#7d8590', font: { size: 11 } } },
+          y: { grid: { display: false }, ticks: { color: '#7d8590', font: { size: 11 } } }
+        }
       }
-    }
-  });
+    });
+  }
 
   // Table
   const tbody = document.getElementById('producer-tbody');
-  tbody.innerHTML = sorted.map(([p, v]) => {
-    const pct = totalRev > 0 ? (v.revenue / totalRev * 100).toFixed(1) : '0.0';
-    return `
-    <tr>
-      <td><strong>${p}</strong></td>
-      <td>${v.products.size}</td>
-      <td>${v.qty.toLocaleString('id-ID')} pcs</td>
-      <td class="text-green font-mono">${fmt(v.revenue)}</td>
-      <td>
-        <div class="progress-bar-wrap">
-          <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
-          <span style="min-width:42px">${pct}%</span>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
+  tbody.innerHTML = sorted.length === 0
+    ? (!hasData() ? '<tr><td colspan="5" class="no-data">&#x1F3ED; Belum ada data produsen. Silakan impor spreadsheet Anda.</td></tr>' : '<tr><td colspan="5" class="no-data">Tidak ada data produsen untuk filter ini</td></tr>')
+    : sorted.map(([p, v]) => {
+      const pct = totalRev > 0 ? (v.revenue / totalRev * 100).toFixed(1) : '0.0';
+      return `
+      <tr>
+        <td><strong>${p}</strong></td>
+        <td>${v.products.size}</td>
+        <td>${v.qty.toLocaleString('id-ID')} pcs</td>
+        <td class="text-green font-mono">${fmt(v.revenue)}</td>
+        <td>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+            <span style="min-width:42px">${pct}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
 }
 
 // ─── Stock Section ───────────────────────────
 function renderStock(dateStr) {
-  if (!dateStr) return;
+  const kpiEl = document.getElementById('stock-kpis');
+  const tbody = document.getElementById('stock-tbody');
+  const countEl = document.getElementById('stock-count');
+  const valEl = document.getElementById('stock-total-value');
+
+  if (!dateStr || !DB || !DB.stock_by_day || Object.keys(DB.stock_by_day).length === 0) {
+    document.getElementById('stock-table-title').textContent = 'Stok Opname';
+    if (kpiEl) {
+      kpiEl.innerHTML = `
+        <div class="empty-stock-card">
+          <span style="font-size:32px">&#x1F4CB;</span>
+          <div style="flex:1; min-width:200px">
+            <strong style="color:var(--text);font-size:15px;display:block">Belum Ada Data Stok Opname</strong>
+            <p style="font-size:12.5px;color:var(--text-muted);margin-top:4px">Silakan impor file Excel stok opname harian Anda untuk melihat ketersediaan barang dan nilai inventori.</p>
+          </div>
+          <button class="btn-primary-action btn-sm" id="btn-stock-empty-import">&#x1F4E5; Impor File Stok</button>
+        </div>`;
+      document.getElementById('btn-stock-empty-import')?.addEventListener('click', () => openImportModal('tab-file'));
+    }
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="no-data">Belum ada data stok opname. Silakan impor spreadsheet Anda.</td></tr>';
+    if (countEl) countEl.textContent = '0 produk';
+    if (valEl) valEl.textContent = 'Nilai total: Rp 0';
+    return;
+  }
+
   document.getElementById('stock-table-title').textContent = `Stok Opname – ${formatDateID(dateStr)}`;
 
   const stockDay = DB.stock_by_day[dateStr] || {};
@@ -594,13 +690,12 @@ function renderStock(dateStr) {
   for (const [prod, qty] of Object.entries(stockDay)) {
     if (qty > 0) {
       totalItems++;
-      const price = DB.price_map[prod.toUpperCase()] || 0;
+      const price = (DB.price_map && DB.price_map[prod.toUpperCase()]) || 0;
       totalValue += qty * price;
       if (qty > 0 && qty <= 5) lowStockCount++;
     }
   }
 
-  const kpiEl = document.getElementById('stock-kpis');
   kpiEl.innerHTML = `
     <div class="kpi-card kpi-revenue">
       <div class="kpi-icon">&#x1F4E6;</div>
@@ -641,8 +736,8 @@ function renderStock(dateStr) {
     .filter(([p, qty]) => qty >= 0 && (p.toLowerCase().includes(searchQ) || !searchQ))
     .map(([prod, qty]) => {
       const key = prod.toUpperCase();
-      const price = DB.price_map[key] || 0;
-      const producer = DB.producer_map[key] || 'LAINNYA';
+      const price = (DB.price_map && DB.price_map[key]) || 0;
+      const producer = (DB.producer_map && DB.producer_map[key]) || 'LAINNYA';
       const stockValue = qty * price;
       const prevQty = prevStock[prod] || 0;
       const sold = prevQty - qty;
@@ -651,7 +746,6 @@ function renderStock(dateStr) {
     .sort((a, b) => b.stockValue - a.stockValue);
 
   let tvTotal = 0;
-  const tbody = document.getElementById('stock-tbody');
   tbody.innerHTML = rows.length === 0
     ? '<tr><td colspan="7" class="no-data">Tidak ada data stok untuk tanggal ini</td></tr>'
     : rows.map((r, i) => {
@@ -682,18 +776,27 @@ function showSection(name) {
 
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.mob-nav-item').forEach(m => {
+    m.classList.toggle('active', m.dataset.section === name);
+  });
 
-  document.getElementById(`section-${name}`).classList.add('active');
-  document.getElementById(`nav-${name}`).classList.add('active');
+  const targetSec = document.getElementById(`section-${name}`);
+  if (targetSec) targetSec.classList.add('active');
+  const targetNav = document.getElementById(`nav-${name}`);
+  if (targetNav) targetNav.classList.add('active');
 
   const titles = { overview: 'Ringkasan Penjualan', products: 'Daftar Produk', producers: 'Analisis Produsen', stock: 'Stok Opname' };
-  document.getElementById('page-title').textContent = titles[name] || name;
+  const pageTitle = document.getElementById('page-title');
+  if (pageTitle) pageTitle.textContent = titles[name] || name;
 
   // Show/hide filter group (not for stock)
   const fg = document.getElementById('filter-group');
-  fg.style.display = name === 'stock' ? 'none' : 'flex';
+  if (fg) fg.style.display = name === 'stock' ? 'none' : 'flex';
 
   renderSection();
+
+  // Scroll smoothly to top on mobile
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderSection() {
@@ -705,22 +808,55 @@ function renderSection() {
 
 // ─── Event Listeners ─────────────────────────
 function setupEvents() {
-  // Sidebar nav
+  const sidebar = document.getElementById('sidebar');
+  const mainContent = document.getElementById('main-content');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  const closeSidebarBtn = document.getElementById('sidebar-close-btn');
+
+  function closeMobileSidebar() {
+    if (sidebar) sidebar.classList.remove('open');
+    if (backdrop) backdrop.classList.remove('active');
+  }
+
+  function toggleSidebar() {
+    if (window.innerWidth <= 768) {
+      const isOpen = sidebar.classList.toggle('open');
+      if (backdrop) backdrop.classList.toggle('active', isOpen);
+    } else {
+      sidebar.classList.toggle('collapsed');
+      if (mainContent) mainContent.classList.toggle('expanded');
+    }
+  }
+
+  document.getElementById('hamburger')?.addEventListener('click', toggleSidebar);
+  backdrop?.addEventListener('click', closeMobileSidebar);
+  closeSidebarBtn?.addEventListener('click', closeMobileSidebar);
+
+  // Sidebar nav items
   document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', e => {
       e.preventDefault();
       showSection(item.dataset.section);
+      closeMobileSidebar();
     });
   });
 
-  // Hamburger
-  const sidebar = document.getElementById('sidebar');
-  const mainContent = document.getElementById('main-content');
-  document.getElementById('hamburger').addEventListener('click', () => {
-    sidebar.classList.toggle('open');
-    sidebar.classList.toggle('collapsed');
-    mainContent.classList.toggle('expanded');
+  // Mobile Bottom Nav
+  document.querySelectorAll('.mob-nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const sec = item.dataset.section;
+      if (sec) {
+        showSection(sec);
+      } else if (item.id === 'mob-nav-import') {
+        openImportModal('tab-link');
+      }
+    });
   });
+
+  // Empty state hero banner CTA buttons
+  document.getElementById('btn-empty-import')?.addEventListener('click', () => openImportModal('tab-link'));
+  document.getElementById('btn-load-demo')?.addEventListener('click', loadDemoData);
+  document.getElementById('btn-load-demo-modal')?.addEventListener('click', loadDemoData);
 
   // Period tabs
   document.querySelectorAll('.filter-tab').forEach(tab => {
@@ -732,9 +868,9 @@ function setupEvents() {
 
       const fs = document.getElementById('filter-selector');
       if (currentPeriod === 'all') {
-        fs.style.display = 'none';
+        if (fs) fs.style.display = 'none';
       } else {
-        fs.style.display = 'block';
+        if (fs) fs.style.display = 'block';
         buildPeriodOptions();
       }
       renderSection();
@@ -742,14 +878,14 @@ function setupEvents() {
   });
 
   // Period select change
-  document.getElementById('period-select').addEventListener('change', e => {
+  document.getElementById('period-select')?.addEventListener('change', e => {
     currentPeriodValue = e.target.value;
     renderSection();
   });
 
   // Product search
-  document.getElementById('product-search').addEventListener('input', renderProducts);
-  document.getElementById('producer-filter').addEventListener('change', renderProducts);
+  document.getElementById('product-search')?.addEventListener('input', renderProducts);
+  document.getElementById('producer-filter')?.addEventListener('change', renderProducts);
 
   // Product table sort
   document.querySelectorAll('#product-table th.sortable').forEach(th => {
@@ -767,13 +903,14 @@ function setupEvents() {
 
   // Stock date select
   const stockSel = document.getElementById('stock-date-select');
-  stockSel.addEventListener('change', e => {
+  stockSel?.addEventListener('change', e => {
     renderStock(e.target.value);
   });
 
   // Stock search
-  document.getElementById('stock-search').addEventListener('input', () => {
-    renderStock(document.getElementById('stock-date-select').value);
+  document.getElementById('stock-search')?.addEventListener('input', () => {
+    const val = document.getElementById('stock-date-select')?.value;
+    renderStock(val);
   });
 }
 
@@ -1096,39 +1233,64 @@ async function applyNewDatabase(newDB, successMessage) {
 }
 
 function updateDataStatusBadge() {
-  const stockDays = Object.keys(DB.stock_by_day || {}).length;
-  const isCustom = DB.meta && DB.meta.source === 'custom_import';
+  const stockDays = Object.keys((DB && DB.stock_by_day) || {}).length;
+  const isCustom = DB && DB.meta && DB.meta.source === 'custom_import';
+  const isDemo = DB && DB.meta && (DB.meta.source === 'demo_data_json' || DB.meta.source === 'default_data_json');
 
   const pillText = document.getElementById('pill-text');
   const pill = document.getElementById('data-status-pill');
-  if (pillText) {
-    pillText.textContent = isCustom ? `${stockDays} Hari (Impor Baru)` : `${stockDays} Hari Data`;
-  }
-  if (pill) {
-    pill.title = isCustom ? `Diimpor: ${DB.meta.imported_at}` : 'Data bawaan toko KDKMP PARANG';
+  if (pillText && pill) {
+    if (!hasData() || stockDays === 0) {
+      pillText.textContent = 'Belum Ada Data';
+      pill.className = 'data-status-pill empty';
+      pill.title = 'Spreadsheet belum diimpor';
+    } else if (isCustom) {
+      pillText.textContent = `${stockDays} Hari (Impor)`;
+      pill.className = 'data-status-pill';
+      pill.title = `Diimpor: ${DB.meta.imported_at}`;
+    } else if (isDemo) {
+      pillText.textContent = `${stockDays} Hari (Demo)`;
+      pill.className = 'data-status-pill demo';
+      pill.title = 'Data contoh toko';
+    } else {
+      pillText.textContent = `${stockDays} Hari Data`;
+      pill.className = 'data-status-pill';
+      pill.title = 'Data penjualan KDKMP PARANG';
+    }
   }
 
   const sub = document.getElementById('sidebar-import-sub');
   if (sub) {
-    sub.textContent = isCustom ? 'Data Kustom Aktif' : 'Google Sheets & Excel';
+    sub.textContent = (!hasData() || stockDays === 0) ? 'Data Kosong' : isCustom ? 'Data Kustom Aktif' : isDemo ? 'Data Demo Aktif' : 'Google Sheets & Excel';
   }
 
   const footer = document.getElementById('sidebar-footer-text');
   if (footer) {
-    const dates = Object.keys(DB.stock_by_day || {}).sort();
+    const dates = Object.keys((DB && DB.stock_by_day) || {}).sort();
     if (dates.length > 0) {
       footer.textContent = `Data: ${dates[0]} s/d ${dates[dates.length - 1]}`;
+    } else {
+      footer.textContent = 'KDKMP PARANG';
     }
   }
 }
 
 function updateStatusTabInfo() {
-  const isCustom = DB.meta && DB.meta.source === 'custom_import';
-  const dates = Object.keys(DB.stock_by_day || {}).sort();
-  const salesDates = Object.keys(DB.sales_by_day || {}).sort();
+  const isCustom = DB && DB.meta && DB.meta.source === 'custom_import';
+  const isDemo = DB && DB.meta && (DB.meta.source === 'demo_data_json' || DB.meta.source === 'default_data_json');
+  const dates = Object.keys((DB && DB.stock_by_day) || {}).sort();
+  const salesDates = Object.keys((DB && DB.sales_by_day) || {}).sort();
 
   const src = document.getElementById('info-data-source');
-  if (src) src.textContent = isCustom ? 'Impor Kustom (IndexedDB)' : 'Default (data.json bawaan)';
+  if (src) {
+    src.textContent = (!hasData() || dates.length === 0)
+      ? 'Belum Ada Data (Kosong)'
+      : isCustom
+        ? 'Impor Kustom (IndexedDB)'
+        : isDemo
+          ? 'Data Contoh Demo'
+          : 'Data Aktif';
+  }
 
   const rng = document.getElementById('info-data-range');
   if (rng) rng.textContent = dates.length > 0 ? `${dates[0]} s/d ${dates[dates.length - 1]}` : '-';
@@ -1140,7 +1302,7 @@ function updateStatusTabInfo() {
   if (saDays) saDays.textContent = `${salesDates.length} hari`;
 
   const lastImp = document.getElementById('info-last-imported');
-  if (lastImp) lastImp.textContent = (DB.meta && DB.meta.imported_at) ? DB.meta.imported_at : 'Saat aplikasi dimuat pertama kali';
+  if (lastImp) lastImp.textContent = (DB && DB.meta && DB.meta.imported_at) ? DB.meta.imported_at : '-';
 }
 
 function openImportModal(initialTab = 'tab-link') {
@@ -1391,76 +1553,81 @@ function setupImportEvents() {
     }
   });
 
-  // 3. RESET BUTTON
-  document.getElementById('btn-reset-data')?.addEventListener('click', async () => {
-    if (!confirm('Apakah Anda yakin ingin mengembalikan data ke data orisinal toko (data.json)?')) return;
+  // 3. RESET & DEMO ACTIONS
+  document.getElementById('btn-reset-data')?.addEventListener('click', clearAllData);
+  document.getElementById('btn-load-demo-modal')?.addEventListener('click', loadDemoData);
+}
 
-    resetProgress();
-    updateProgress(10, 'Mengembalikan ke data default...', 'info');
+// Clear all data and reset to completely empty state
+async function clearAllData() {
+  if (!confirm('Apakah Anda yakin ingin mengosongkan semua data dari dashboard? Data yang tersimpan di browser akan dihapus.')) return;
 
-    try {
-      await clearStorage();
-      const resp = await fetch('data.json');
-      if (!resp.ok) throw new Error('Gagal mengunduh data.json bawaan');
-      const defaultDB = await resp.json();
-      defaultDB.meta = {
-        source: 'default_data_json',
-        imported_at: 'Data Bawaan Asli',
-        stock_days_count: Object.keys(defaultDB.stock_by_day || {}).length,
-        sales_days_count: Object.keys(defaultDB.sales_by_day || {}).length,
-        date_range: '16 Juni 2026 s/d 11 Oktober 2026'
-      };
+  resetProgress();
+  updateProgress(20, 'Menghapus data dari penyimpanan browser...', 'info');
 
-      DB = defaultDB;
+  try {
+    await clearStorage();
+    DB = getEmptyDB();
 
-      // Rebuild period selectors
-      currentPeriodValue = '';
-      const fs = document.getElementById('filter-selector');
-      if (currentPeriod !== 'all') {
-        fs.style.display = 'block';
-        buildPeriodOptions();
-      } else {
-        fs.style.display = 'none';
-      }
+    currentPeriod = 'all';
+    currentPeriodValue = '';
+    document.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.period === 'all'));
+    const fs = document.getElementById('filter-selector');
+    if (fs) fs.style.display = 'none';
 
-      const firstStockDate = buildStockDateOptions();
-      renderStock(firstStockDate);
+    buildStockDateOptions();
+    renderStock('');
 
-      updateDataStatusBadge();
-      updateStatusTabInfo();
-      renderSection();
+    updateDataStatusBadge();
+    updateStatusTabInfo();
+    renderSection();
 
-      updateProgress(100, 'Berhasil dikembalikan ke data bawaan!', 'success');
-      setTimeout(() => {
-        closeImportModal();
-        showToast('Data dashboard telah dikembalikan ke data orisinal!');
-      }, 700);
+    updateProgress(100, 'Data berhasil dikosongkan!', 'success');
+    setTimeout(() => {
+      closeImportModal();
+      showToast('Semua data berhasil dikosongkan. Dashboard kini bersih.');
+    }, 600);
 
-    } catch (err) {
-      showToast('Gagal mereset data: ' + err.message, true);
-    }
-  });
+  } catch (err) {
+    showToast('Gagal mengosongkan data: ' + err.message, true);
+  }
+}
+
+// Load demo data on-demand (data.json)
+async function loadDemoData() {
+  resetProgress();
+  updateProgress(10, 'Mengunduh data contoh toko (Juni - Oktober 2026)...', 'info');
+
+  try {
+    const resp = await fetch('data.json');
+    if (!resp.ok) throw new Error('File data.json bawaan tidak ditemukan.');
+    const demoDB = await resp.json();
+    demoDB.meta = {
+      source: 'demo_data_json',
+      imported_at: 'Data Contoh Demo (Jun - Okt 2026)',
+      stock_days_count: Object.keys(demoDB.stock_by_day || {}).length,
+      sales_days_count: Object.keys(demoDB.sales_by_day || {}).length,
+      date_range: '16 Juni 2026 s/d 11 Oktober 2026'
+    };
+
+    await applyNewDatabase(demoDB, 'Data demo toko (Jun-Okt 2026) berhasil dimuat!');
+  } catch (err) {
+    showToast('Gagal memuat data demo: ' + err.message, true);
+  }
 }
 
 // ─── Init ────────────────────────────────────
 async function init() {
   try {
-    // 1. Cek penyimpanan IndexedDB
+    // 1. Cek apakah ada data tersimpan di IndexedDB
     const stored = await loadFromStorage();
     if (stored && stored.sales_by_day && Object.keys(stored.sales_by_day).length > 0) {
       DB = stored;
       console.log('Memuat data aktif dari penyimpanan IndexedDB browser');
     } else {
-      const resp = await fetch('data.json');
-      if (!resp.ok) throw new Error('Failed to load data.json');
-      DB = await resp.json();
-      DB.meta = {
-        source: 'default_data_json',
-        imported_at: 'Data Bawaan Toko',
-        stock_days_count: Object.keys(DB.stock_by_day || {}).length,
-        sales_days_count: Object.keys(DB.sales_by_day || {}).length,
-        date_range: '16 Juni 2026 s/d 11 Oktober 2026'
-      };
+      // PERMINTAAN USER: Default awal kosong (tidak memuat spreadsheet otomatis)
+      console.log('Inisialisasi: Dashboard bersih / data kosong');
+      DB = getEmptyDB();
     }
 
     // Init stock date selector
@@ -1476,7 +1643,7 @@ async function init() {
 
   } catch (err) {
     document.getElementById('loading').innerHTML =
-      `<div style="color:#f85149;font-size:16px">&#x274C; Gagal memuat data:<br><code style="font-size:12px">${err.message}</code></div>`;
+      `<div style="color:#f85149;font-size:16px">&#x274C; Gagal memuat aplikasi:<br><code style="font-size:12px">${err.message}</code></div>`;
   }
 }
 
