@@ -205,12 +205,13 @@ function renderOverview() {
 
   if (!hasData()) {
     if (emptyBanner) emptyBanner.style.display = 'block';
+    const priceCount = (DB && DB.price_map) ? Object.keys(DB.price_map).length : 0;
     document.getElementById('kpi-revenue').textContent = 'Rp 0';
     document.getElementById('kpi-revenue-sub').textContent = '0 hari data';
     document.getElementById('kpi-qty').textContent = '0 pcs';
     document.getElementById('kpi-qty-sub').textContent = '0 pcs/hari';
-    document.getElementById('kpi-products').textContent = '0';
-    document.getElementById('kpi-products-sub').textContent = '0 produk terdaftar';
+    document.getElementById('kpi-products').textContent = priceCount > 0 ? String(priceCount) : '0';
+    document.getElementById('kpi-products-sub').textContent = priceCount > 0 ? `${priceCount} produk terdaftar` : '0 produk terdaftar';
     document.getElementById('kpi-daily').textContent = 'Rp 0';
     document.getElementById('kpi-daily-sub').textContent = 'rata-rata pendapatan harian';
     const tb = document.getElementById('trend-badge');
@@ -512,6 +513,30 @@ function renderProducts() {
     lastStock: lastStock[name] || 0,
   }));
 
+  // Jika belum ada data transaksi penjualan, tampilkan semua produk dari Daftar Harga yang terdaftar
+  if (rows.length === 0 && DB && DB.price_map && Object.keys(DB.price_map).length > 0) {
+    rows = Object.entries(DB.price_map).map(([name, price]) => ({
+      name,
+      producer: (DB.producer_map && DB.producer_map[name.toUpperCase()]) || 'LAINNYA',
+      price: price || 0,
+      qty: 0,
+      revenue: 0,
+      lastStock: lastStock[name] || 0,
+    }));
+  }
+
+  // Populate producer filter
+  const allProducers = [...new Set(rows.map(r => r.producer || 'LAINNYA'))].sort();
+  const pf = document.getElementById('producer-filter');
+  const currentPF = pf.value;
+  pf.innerHTML = '<option value="">Semua Produsen</option>';
+  allProducers.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    if (p === currentPF) opt.selected = true;
+    pf.appendChild(opt);
+  });
+
   // Sort
   const col = productSort.col;
   const dir = productSort.dir === 'asc' ? 1 : -1;
@@ -523,8 +548,8 @@ function renderProducts() {
   });
 
   // Filter
-  const searchQ = document.getElementById('product-search').value.toLowerCase();
-  const producerQ = document.getElementById('producer-filter').value;
+  const searchQ = (document.getElementById('product-search')?.value || '').toLowerCase();
+  const producerQ = document.getElementById('producer-filter')?.value || '';
 
   rows = rows.filter(r => {
     if (searchQ && !r.name.toLowerCase().includes(searchQ)) return false;
@@ -532,23 +557,13 @@ function renderProducts() {
     return true;
   });
 
-  // Populate producer filter
-  const allProducers = [...new Set(Object.entries(agg).map(([, v]) => v.producer || 'LAINNYA'))].sort();
-  const pf = document.getElementById('producer-filter');
-  const currentPF = pf.value;
-  pf.innerHTML = '<option value="">Semua Produsen</option>';
-  allProducers.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p; opt.textContent = p;
-    if (p === currentPF) opt.selected = true;
-    pf.appendChild(opt);
-  });
-
   const tbody = document.getElementById('product-tbody');
   const maxRev = Math.max(...rows.map(r => r.revenue), 1);
 
   tbody.innerHTML = rows.length === 0
-    ? (!hasData() ? '<tr><td colspan="7" class="no-data">&#x1F4E6; Belum ada data produk. Silakan impor spreadsheet Anda.</td></tr>' : '<tr><td colspan="7" class="no-data">Tidak ada data untuk filter yang dipilih</td></tr>')
+    ? (!hasData() && (!DB || !DB.price_map || Object.keys(DB.price_map).length === 0)
+        ? '<tr><td colspan="7" class="no-data">&#x1F4E6; Belum ada data produk. Silakan impor spreadsheet Anda.</td></tr>'
+        : '<tr><td colspan="7" class="no-data">Tidak ada data untuk filter yang dipilih</td></tr>')
     : rows.map((r, i) => `
     <tr>
       <td class="text-muted">${i + 1}</td>
@@ -1080,6 +1095,61 @@ function parseSheetDate(sheetName) {
   return null;
 }
 
+// Membersihkan dan mengonversi format harga (termasuk format Indonesia 'Rp 10.900,00' atau '10.900') ke angka akurat
+function cleanPriceNumber(val) {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === 'number') {
+    return isNaN(val) ? 0 : val;
+  }
+  let str = String(val).trim();
+  if (!str) return 0;
+
+  // Hapus prefix mata uang (Rp, IDR, $, dll) dan petik/spasi
+  str = str.replace(/^(?:Rp\.?|IDR|\$)\s*/i, '').replace(/["']/g, '').trim();
+
+  if (str.includes('.') && str.includes(',')) {
+    const lastDot = str.lastIndexOf('.');
+    const lastComma = str.lastIndexOf(',');
+    if (lastComma > lastDot) {
+      // Format Indonesia: 10.900,00 -> ribuan titik, desimal koma -> 10900.00
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      // Format US: 10,900.00 -> 10900.00
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes(',')) {
+    // Hanya ada koma
+    const parts = str.split(',');
+    if (parts.length === 2 && parts[1].length <= 2) {
+      // Desimal: 10900,50 -> 10900.50
+      str = parts[0].replace(/[^0-9-]/g, '') + '.' + parts[1].replace(/[^0-9]/g, '');
+    } else {
+      // Pemisah ribuan: 10,900 -> 10900
+      str = str.replace(/,/g, '');
+    }
+  } else if (str.includes('.')) {
+    // Hanya ada titik
+    const parts = str.split('.');
+    if (parts.length > 2) {
+      // Lebih dari 1 titik: pemisah ribuan (misal 1.500.000 -> 1500000)
+      str = str.replace(/\./g, '');
+    } else if (parts.length === 2) {
+      if (parts[1].length === 3) {
+        // Tepat 3 digit di belakang titik: pemisah ribuan (misal 10.900 -> 10900, 3.000 -> 3000)
+        str = parts[0].replace(/[^0-9-]/g, '') + parts[1].replace(/[^0-9]/g, '');
+      } else {
+        // Bukan 3 digit: anggap desimal standar (misal 10.5 atau 10.25)
+        str = parts[0].replace(/[^0-9-]/g, '') + '.' + parts[1].replace(/[^0-9]/g, '');
+      }
+    }
+  } else {
+    str = str.replace(/[^0-9-]/g, '');
+  }
+
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
 function parsePriceWorkbook(wbPrice) {
   const firstSheetName = wbPrice.SheetNames[0];
   const ws = wbPrice.Sheets[firstSheetName];
@@ -1088,26 +1158,109 @@ function parsePriceWorkbook(wbPrice) {
   const producerMap = {};
   let currentProducer = 'LAINNYA';
 
-  for (let i = 1; i < rows.length; i++) {
+  if (!rows || rows.length === 0) {
+    return { priceMap, producerMap, count: 0 };
+  }
+
+  // Cari baris header secara cerdas (cek 15 baris pertama)
+  let headerRowIdx = -1;
+  let prodCol = -1;
+  let priceCol = -1;
+  let producerCol = -1;
+
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const row = rows[i];
     if (!row || !Array.isArray(row)) continue;
-    if (row[0] !== null && row[0] !== undefined && String(row[0]).trim() !== '') {
-      currentProducer = String(row[0]).trim();
-    }
-    if (row[1] !== null && row[1] !== undefined && String(row[1]).trim() !== '') {
-      const prodName = String(row[1]).trim();
-      const key = prodName.toUpperCase();
-      let price = row[2];
-      if (typeof price === 'string') {
-        price = parseFloat(price.replace(/[^0-9.-]/g, '')) || 0;
-      } else if (typeof price !== 'number') {
-        price = 0;
+    let foundProd = -1;
+    let foundPrice = -1;
+    let foundProducer = -1;
+
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').trim().toLowerCase();
+      if (/nama\s*(produk|barang|item)|produk|item/i.test(cell) && foundProd === -1) {
+        foundProd = c;
+      } else if (/harga|price|hrg/i.test(cell) && foundPrice === -1) {
+        foundPrice = c;
+      } else if (/produsen|supplier|suplier|distributor|pabrik/i.test(cell) && foundProducer === -1) {
+        foundProducer = c;
       }
+    }
+
+    if (foundProd !== -1 && foundPrice !== -1) {
+      headerRowIdx = i;
+      prodCol = foundProd;
+      priceCol = foundPrice;
+      producerCol = foundProducer;
+      break;
+    }
+  }
+
+  // Fallback standar jika tidak ada label header eksplisit
+  const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 1;
+  if (prodCol === -1) prodCol = 1;
+  if (priceCol === -1) priceCol = 2;
+  if (producerCol === -1) producerCol = 0;
+
+  for (let i = startRow; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !Array.isArray(row)) continue;
+
+    // Ambil produsen jika tertera
+    if (producerCol >= 0 && row[producerCol] !== null && row[producerCol] !== undefined) {
+      const pVal = String(row[producerCol]).trim();
+      if (pVal !== '' && !/^(produsen|supplier|pabrik)$/i.test(pVal)) {
+        currentProducer = pVal;
+      }
+    }
+
+    // Ambil nama produk
+    if (row[prodCol] !== null && row[prodCol] !== undefined) {
+      const rawProdName = String(row[prodCol]).trim();
+      if (!rawProdName || /^(nama\s*(produk|barang)|produk)$/i.test(rawProdName)) continue;
+
+      const key = rawProdName.toUpperCase();
+      const rawPrice = row[priceCol];
+      const price = cleanPriceNumber(rawPrice);
+
       priceMap[key] = price;
       producerMap[key] = currentProducer || 'LAINNYA';
     }
   }
-  return { priceMap, producerMap };
+
+  return { priceMap, producerMap, count: Object.keys(priceMap).length };
+}
+
+// Menghitung ulang data penjualan jika daftar harga diperbarui
+function recalculateSales(stockByDay, priceMap, producerMap) {
+  const sortedDates = Object.keys(stockByDay || {}).sort();
+  const salesData = {};
+
+  for (let i = 1; i < sortedDates.length; i++) {
+    const prevDate = sortedDates[i - 1];
+    const currDate = sortedDates[i];
+    const prevStock = stockByDay[prevDate] || {};
+    const currStock = stockByDay[currDate] || {};
+    const dailySales = {};
+
+    const allProducts = new Set([...Object.keys(prevStock), ...Object.keys(currStock)]);
+    for (const product of allProducts) {
+      const prevQty = prevStock[product] || 0;
+      const currQty = currStock[product] || 0;
+      const sold = prevQty - currQty;
+      if (sold > 0) {
+        const key = product.toUpperCase();
+        const price = (priceMap && priceMap[key] !== undefined) ? priceMap[key] : 0;
+        dailySales[product] = {
+          qty: sold,
+          price: price,
+          revenue: sold * price,
+          producer: (producerMap && producerMap[key]) ? producerMap[key] : 'LAINNYA'
+        };
+      }
+    }
+    salesData[currDate] = dailySales;
+  }
+  return salesData;
 }
 
 function parseStockWorkbook(wbStock, priceMap, producerMap, progressCb) {
@@ -1234,6 +1387,7 @@ async function applyNewDatabase(newDB, successMessage) {
 
 function updateDataStatusBadge() {
   const stockDays = Object.keys((DB && DB.stock_by_day) || {}).length;
+  const priceCount = Object.keys((DB && DB.price_map) || {}).length;
   const isCustom = DB && DB.meta && DB.meta.source === 'custom_import';
   const isDemo = DB && DB.meta && (DB.meta.source === 'demo_data_json' || DB.meta.source === 'default_data_json');
 
@@ -1241,9 +1395,15 @@ function updateDataStatusBadge() {
   const pill = document.getElementById('data-status-pill');
   if (pillText && pill) {
     if (!hasData() || stockDays === 0) {
-      pillText.textContent = 'Belum Ada Data';
-      pill.className = 'data-status-pill empty';
-      pill.title = 'Spreadsheet belum diimpor';
+      if (priceCount > 0) {
+        pillText.textContent = `${priceCount} Harga Produk`;
+        pill.className = 'data-status-pill';
+        pill.title = 'Daftar harga aktif (menunggu file stok opname)';
+      } else {
+        pillText.textContent = 'Belum Ada Data';
+        pill.className = 'data-status-pill empty';
+        pill.title = 'Spreadsheet belum diimpor';
+      }
     } else if (isCustom) {
       pillText.textContent = `${stockDays} Hari (Impor)`;
       pill.className = 'data-status-pill';
@@ -1261,7 +1421,9 @@ function updateDataStatusBadge() {
 
   const sub = document.getElementById('sidebar-import-sub');
   if (sub) {
-    sub.textContent = (!hasData() || stockDays === 0) ? 'Data Kosong' : isCustom ? 'Data Kustom Aktif' : isDemo ? 'Data Demo Aktif' : 'Google Sheets & Excel';
+    sub.textContent = (!hasData() || stockDays === 0)
+      ? (priceCount > 0 ? `${priceCount} Harga Siap` : 'Data Kosong')
+      : isCustom ? 'Data Kustom Aktif' : isDemo ? 'Data Demo Aktif' : 'Google Sheets & Excel';
   }
 
   const footer = document.getElementById('sidebar-footer-text');
@@ -1280,11 +1442,12 @@ function updateStatusTabInfo() {
   const isDemo = DB && DB.meta && (DB.meta.source === 'demo_data_json' || DB.meta.source === 'default_data_json');
   const dates = Object.keys((DB && DB.stock_by_day) || {}).sort();
   const salesDates = Object.keys((DB && DB.sales_by_day) || {}).sort();
+  const priceCount = Object.keys((DB && DB.price_map) || {}).length;
 
   const src = document.getElementById('info-data-source');
   if (src) {
     src.textContent = (!hasData() || dates.length === 0)
-      ? 'Belum Ada Data (Kosong)'
+      ? (priceCount > 0 ? `Daftar Harga Aktif (${priceCount} produk)` : 'Belum Ada Data (Kosong)')
       : isCustom
         ? 'Impor Kustom (IndexedDB)'
         : isDemo
@@ -1366,15 +1529,15 @@ function setupImportEvents() {
     const priceUrl = document.getElementById('input-link-price')?.value.trim();
 
     if (!stockUrl && !priceUrl) {
-      showToast('Harap masukkan minimal Link Spreadsheet Stok Opname!', true);
+      showToast('Harap masukkan minimal Link Google Spreadsheet!', true);
       return;
     }
 
-    const stockId = extractSpreadsheetId(stockUrl);
-    const priceId = extractSpreadsheetId(priceUrl);
+    let stockId = extractSpreadsheetId(stockUrl);
+    let priceId = extractSpreadsheetId(priceUrl);
 
-    if (!stockId) {
-      showToast('Link Google Sheets Stok Opname tidak valid!', true);
+    if (!stockId && !priceId) {
+      showToast('Link Google Sheets yang dimasukkan tidak valid!', true);
       return;
     }
 
@@ -1386,28 +1549,90 @@ function setupImportEvents() {
     const directPriceLink = document.getElementById('link-download-direct-price');
     const corsHelp = document.getElementById('link-export-help');
 
-    if (directStockLink) directStockLink.href = `https://docs.google.com/spreadsheets/d/${stockId}/export?format=xlsx`;
+    if (directStockLink && stockId) directStockLink.href = `https://docs.google.com/spreadsheets/d/${stockId}/export?format=xlsx`;
     if (directPriceLink && priceId) directPriceLink.href = `https://docs.google.com/spreadsheets/d/${priceId}/export?format=xlsx`;
 
-    let priceMap = Object.assign({}, DB.price_map || {});
-    let producerMap = Object.assign({}, DB.producer_map || {});
+    let priceMap = Object.assign({}, (DB && DB.price_map) || {});
+    let producerMap = Object.assign({}, (DB && DB.producer_map) || {});
+    let parsedPriceCount = 0;
 
-    // Step 1: Fetch Price Sheet if provided
-    if (priceId) {
+    // Deteksi cerdas jika pengguna hanya memasukkan link Daftar Harga di input Stok Opname
+    if (stockId && !priceId) {
+      try {
+        const testCsvUrl = `https://docs.google.com/spreadsheets/d/${stockId}/gviz/tq?tqx=out:csv`;
+        const testResp = await fetch(testCsvUrl);
+        if (testResp.ok) {
+          const testCsv = await testResp.text();
+          if (!testCsv.trim().startsWith('<!DOCTYPE') && !testCsv.trim().startsWith('<html')) {
+            const testWb = XLSX.read(testCsv, { type: 'string' });
+            const testParsed = parsePriceWorkbook(testWb);
+            if (testParsed.count > 5) {
+              updateProgress(15, 'Tautan terdeteksi sebagai Daftar Harga Barang...', 'info');
+              priceId = stockId;
+              stockId = null;
+              priceMap = testParsed.priceMap;
+              producerMap = testParsed.producerMap;
+              parsedPriceCount = testParsed.count;
+              updateProgress(30, `Berhasil membaca ${parsedPriceCount} harga produk!`, 'success');
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Sheet type probe note:', e);
+      }
+    }
+
+    // Step 1: Fetch Price Sheet if provided or detected
+    if (priceId && parsedPriceCount === 0) {
       updateProgress(15, 'Mengunduh data Daftar Harga dari Google Sheets...', 'info');
       try {
         const priceCsvUrl = `https://docs.google.com/spreadsheets/d/${priceId}/gviz/tq?tqx=out:csv`;
         const resp = await fetch(priceCsvUrl);
         if (!resp.ok) throw new Error('Status respon ' + resp.status);
         const csvText = await resp.text();
+        if (csvText.trim().startsWith('<!DOCTYPE') || csvText.trim().startsWith('<html')) {
+          throw new Error('Akses ditolak. Pastikan akses Google Sheets telah disetel "Siapa saja yang memiliki link" (Viewer).');
+        }
         const wbPrice = XLSX.read(csvText, { type: 'string' });
         const parsedPrice = parsePriceWorkbook(wbPrice);
-        priceMap = parsedPrice.priceMap;
-        producerMap = parsedPrice.producerMap;
-        updateProgress(30, `Berhasil membaca ${Object.keys(priceMap).length} harga produk!`, 'success');
+        if (parsedPrice.count > 0) {
+          priceMap = parsedPrice.priceMap;
+          producerMap = parsedPrice.producerMap;
+          parsedPriceCount = parsedPrice.count;
+          updateProgress(35, `Berhasil membaca ${parsedPriceCount} harga produk dengan akurat!`, 'success');
+        } else {
+          throw new Error('Tidak ditemukan kolom Nama Produk / Harga pada sheet tersebut.');
+        }
       } catch (err) {
-        updateProgress(30, `Catatan: Gagal memuat daftar harga via link (${err.message}), menggunakan data harga sebelumnya.`, 'error');
+        console.error('Fetch price sheet error:', err);
+        updateProgress(30, `Catatan: Gagal memuat daftar harga via link (${err.message})`, 'error');
+        if (!stockId) {
+          showToast(`Gagal membaca Daftar Harga: ${err.message}`, true);
+          return;
+        }
       }
+    }
+
+    // Jika hanya daftar harga yang diimpor (tanpa stok opname baru)
+    if (!stockId) {
+      if (parsedPriceCount > 0) {
+        DB.price_map = priceMap;
+        DB.producer_map = producerMap;
+        DB.meta.imported_at = new Date().toLocaleString('id-ID');
+
+        const stockDays = Object.keys((DB && DB.stock_by_day) || {}).length;
+        if (stockDays > 0) {
+          updateProgress(70, 'Menghitung ulang transaksi penjualan dengan harga baru...', 'info');
+          DB.sales_by_day = recalculateSales(DB.stock_by_day, priceMap, producerMap);
+          DB.meta.sales_days_count = Object.keys(DB.sales_by_day).length;
+          await applyNewDatabase(DB, `Daftar harga (${parsedPriceCount} produk) berhasil diperbarui dan transaksi penjualan dihitung ulang!`);
+        } else {
+          await applyNewDatabase(DB, `Daftar harga (${parsedPriceCount} produk) berhasil dimuat! Silakan masukkan file/link Stok Opname.`);
+        }
+      } else {
+        showToast('Tidak ada data harga yang berhasil dibaca dari tautan tersebut.', true);
+      }
+      return;
     }
 
     // Step 2: Fetch Stock Sheet
@@ -1445,7 +1670,7 @@ function setupImportEvents() {
   const btnProcessFiles = document.getElementById('btn-process-files');
 
   function checkFileReady() {
-    if (selectedStockFile) {
+    if (selectedStockFile || selectedPriceFile) {
       btnProcessFiles.removeAttribute('disabled');
     } else {
       btnProcessFiles.setAttribute('disabled', 'true');
@@ -1508,32 +1733,54 @@ function setupImportEvents() {
 
   // Process Files Button
   btnProcessFiles?.addEventListener('click', async () => {
-    if (!selectedStockFile) {
-      showToast('Pilih file Stok Opname (.xlsx) terlebih dahulu!', true);
+    if (!selectedStockFile && !selectedPriceFile) {
+      showToast('Pilih file Stok Opname atau Daftar Harga terlebih dahulu!', true);
       return;
     }
 
     resetProgress();
     updateProgress(5, 'Membaca file yang diunggah di browser...', 'info');
 
-    let priceMap = Object.assign({}, DB.price_map || {});
-    let producerMap = Object.assign({}, DB.producer_map || {});
+    let priceMap = Object.assign({}, (DB && DB.price_map) || {});
+    let producerMap = Object.assign({}, (DB && DB.producer_map) || {});
 
     try {
-      // Read price file if provided
+      // 1. Baca file harga jika dipilih
       if (selectedPriceFile) {
         updateProgress(15, `Membaca file harga: ${selectedPriceFile.name}...`, 'info');
         const priceBuffer = await selectedPriceFile.arrayBuffer();
         const wbPrice = XLSX.read(priceBuffer, { type: 'array' });
         const parsedPrice = parsePriceWorkbook(wbPrice);
-        priceMap = parsedPrice.priceMap;
-        producerMap = parsedPrice.producerMap;
-        updateProgress(25, `Berhasil membaca ${Object.keys(priceMap).length} harga produk!`, 'success');
+        if (parsedPrice.count > 0) {
+          priceMap = parsedPrice.priceMap;
+          producerMap = parsedPrice.producerMap;
+          updateProgress(30, `Berhasil membaca ${parsedPrice.count} harga produk!`, 'success');
+        } else {
+          throw new Error('Tidak ditemukan kolom Nama Produk / Harga pada file harga.');
+        }
+
+        // Jika hanya file harga yang diunggah (tanpa file stok)
+        if (!selectedStockFile) {
+          DB.price_map = priceMap;
+          DB.producer_map = producerMap;
+          DB.meta.imported_at = new Date().toLocaleString('id-ID');
+
+          const stockDays = Object.keys((DB && DB.stock_by_day) || {}).length;
+          if (stockDays > 0) {
+            updateProgress(70, 'Menghitung ulang transaksi penjualan dengan harga baru...', 'info');
+            DB.sales_by_day = recalculateSales(DB.stock_by_day, priceMap, producerMap);
+            DB.meta.sales_days_count = Object.keys(DB.sales_by_day).length;
+            await applyNewDatabase(DB, `Daftar harga (${parsedPrice.count} produk) berhasil diimpor & transaksi dihitung ulang!`);
+          } else {
+            await applyNewDatabase(DB, `Daftar harga (${parsedPrice.count} produk) berhasil diimpor! Silakan unggah file Stok Opname.`);
+          }
+          return;
+        }
       } else {
         updateProgress(20, 'Menggunakan daftar harga yang sudah tersimpan.', 'info');
       }
 
-      // Read stock file
+      // 2. Baca file stok opname
       updateProgress(35, `Membaca file stok opname: ${selectedStockFile.name}...`, 'info');
       const stockBuffer = await selectedStockFile.arrayBuffer();
       const wbStock = XLSX.read(stockBuffer, { type: 'array' });
